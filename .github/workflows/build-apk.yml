@@ -31,7 +31,7 @@ jobs:
           echo "Cloning core BitChord player & extractor engine..."
           git clone --depth 1 https://github.com/kushagrasinghx/BitChord.git base-bitchord
           
-          # Copy base project build scripts and wrappers into root without overwriting our workflow
+          # Copy base project build scripts and wrappers into root
           rsync -av --ignore-existing base-bitchord/ ./
           
           # Inject our Hook-Drop Party Mix and Glassmorphic UI directly into the app module
@@ -40,15 +40,22 @@ jobs:
           cp -rf src/main/kotlin/com/music/bitchord/party/* app/src/main/java/com/music/bitchord/party/ || true
           cp -rf src/main/kotlin/com/music/bitchord/ui/* app/src/main/java/com/music/bitchord/ui/ || true
           
-          # Configure dummy build properties
+          # Generate real debug keystore so signing validation never fails
+          keytool -genkey -v -keystore test-debug.jks -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          
+          # Configure build properties
           touch local.properties
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           echo "LASTFM_API_KEY=" >> local.properties
           echo "LASTFM_SECRET=" >> local.properties
           echo "LISTEN_TOGETHER_SERVER=" >> local.properties
-          if [ -f "keystore.properties.example" ]; then
-            cp keystore.properties.example keystore.properties
-          fi
+          
+          {
+            echo "storeFile=../test-debug.jks"
+            echo "storePassword=android"
+            echo "keyAlias=androiddebugkey"
+            echo "keyPassword=android"
+          } > keystore.properties
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
@@ -58,14 +65,14 @@ jobs:
       - name: Grant Execute Permission
         run: chmod +x gradlew
 
-      - name: Build Debug APK
+      - name: Build APK
         run: |
-          ./gradlew assembleProdDebug --no-daemon --stacktrace || ./gradlew assembleDevDebug --no-daemon --stacktrace
+          ./gradlew assembleProdDebug --no-daemon --stacktrace || ./gradlew assembleDevDebug --no-daemon --stacktrace || ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Locate Generated APK
         id: find_apk
         run: |
-          APK_FILE=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
+          APK_FILE=$(find . -name "*.apk" -not -path "*/intermediates/*" | head -n 1)
           echo "Found APK: $APK_FILE"
           echo "apk_path=$APK_FILE" >> $GITHUB_OUTPUT
 

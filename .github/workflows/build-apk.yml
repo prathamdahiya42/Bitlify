@@ -25,6 +25,7 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
+          cache: gradle
 
       - name: Fetch Upstream BitChord Base Engine
         run: |
@@ -40,51 +41,49 @@ jobs:
           cp -rf src/main/kotlin/com/music/bitchord/party/* app/src/main/java/com/music/bitchord/party/ || true
           cp -rf src/main/kotlin/com/music/bitchord/ui/* app/src/main/java/com/music/bitchord/ui/ || true
           
-          # Generate real debug keystore so signing validation never fails
-          keytool -genkey -v -keystore test-debug.jks -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          # Generate release keystore matching BitChord config (bitchord-release.jks with alias bitchord)
+          keytool -genkey -v -keystore bitchord-release.jks -storepass android -alias bitchord -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Bitlify Release,O=Bitlify,C=US"
           
           # Configure build properties
           touch local.properties
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           echo "LASTFM_API_KEY=" >> local.properties
           echo "LASTFM_SECRET=" >> local.properties
-          echo "LISTEN_TOGETHER_SERVER=" >> local.properties
+          echo "LISTEN_TOGETHER_SERVER=https://bitchord-listen-together.onrender.com" >> local.properties
           
           {
-            echo "storeFile=../test-debug.jks"
+            echo "storeFile=bitchord-release.jks"
             echo "storePassword=android"
-            echo "keyAlias=androiddebugkey"
+            echo "keyAlias=bitchord"
             echo "keyPassword=android"
           } > keystore.properties
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          cache-read-only: false
 
       - name: Grant Execute Permission
         run: chmod +x gradlew
 
       - name: Build APK
         run: |
-          ./gradlew assembleProdDebug --no-daemon --stacktrace || ./gradlew assembleDevDebug --no-daemon --stacktrace || ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleProdRelease --no-daemon --stacktrace || ./gradlew assembleProdDebug --no-daemon --stacktrace || ./gradlew :app:assembleProdDebug --no-daemon --stacktrace
 
       - name: Locate Generated APK
         id: find_apk
         run: |
-          APK_FILE=$(find . -name "*.apk" -not -path "*/intermediates/*" | head -n 1)
+          APK_FILE=$(find app/build/outputs/apk/ -name "*.apk" 2>/dev/null | head -n 1)
+          if [ -z "$APK_FILE" ]; then
+            APK_FILE=$(find . -name "*.apk" -not -path "*/intermediates/*" | head -n 1)
+          fi
           echo "Found APK: $APK_FILE"
           echo "apk_path=$APK_FILE" >> $GITHUB_OUTPUT
 
       - name: Upload Bitlify APK Artifact
         uses: actions/upload-artifact@v4
+        if: steps.find_apk.outputs.apk_path != ''
         with:
-          name: Bitlify-Debug-APK
+          name: Bitlify-APK
           path: ${{ steps.find_apk.outputs.apk_path }}
           retention-days: 14
 
       - name: Build Summary
         run: |
-          echo "### 🚀 Bitlify APK Build Succeeded!" >> $GITHUB_STEP_SUMMARY
-          echo "Your APK with **Hook-Drop & Dual-Deck Party Mix Mode** and **Glassmorphic UI Redesign** has been compiled successfully." >> $GITHUB_STEP_SUMMARY
-          echo "Download the APK from the Artifacts section above." >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Bitlify APK Build Status" >> $GITHUB_STEP_SUMMARY
+          echo "Build executed with Hook-Drop & Dual-Deck Party Mix Mode and Glassmorphic UI Redesign." >> $GITHUB_STEP_SUMMARY
